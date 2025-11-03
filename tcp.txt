@@ -1,0 +1,442 @@
+tcp
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define MAX 1024
+
+int main() {
+    int sockfd, connfd;
+    struct sockaddr_in servaddr, cli;
+    socklen_t len;
+    char msg[MAX];
+
+    // Pre-stored Account Data: {AccountNo, PIN, Balance}
+    int acc[5][3] = {
+        {1111, 1234, 10000},
+        {2222, 2345, 8000},
+        {3333, 3456, 12000},
+        {4444, 4567, 5000},
+        {5555, 5678, 15000}
+    };
+
+    // Socket creation
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(PORT);
+
+    bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    listen(sockfd, 5);
+    printf("Server started. Waiting for connection...\n");
+
+    len = sizeof(cli);
+    connfd = accept(sockfd, (struct sockaddr*)&cli, &len);
+    printf("Client connected!\n");
+
+    while (1) {
+        int accno, pin, amt;
+        int found = 0;
+
+        // Receive data from client
+        read(connfd, &accno, sizeof(accno));
+        if (accno == -1) break; // stop signal
+        read(connfd, &pin, sizeof(pin));
+        read(connfd, &amt, sizeof(amt));
+
+        printf("\nRequest received -> AccNo: %d, PIN: %d, Amount: %d\n", accno, pin, amt);
+
+        // Process
+        for (int i = 0; i < 5; i++) {
+            if (acc[i][0] == accno && acc[i][1] == pin) {
+                found = 1;
+                if (acc[i][2] - amt >= 1000) {
+                    acc[i][2] -= amt;
+                    sprintf(msg, "Withdrawal successful! New Balance: %d", acc[i][2]);
+                } else {
+                    sprintf(msg, "No enough balance!");
+                }
+                break;
+            }
+        }
+
+        if (!found)
+            sprintf(msg, "Invalid Account Number or PIN!");
+
+        printf("Server Response: %s\n", msg);
+        write(connfd, msg, sizeof(msg));
+    }
+
+    close(connfd);
+    close(sockfd);
+    return 0;
+}
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define MAX 1024
+
+int main() {
+    int sockfd;
+    struct sockaddr_in servaddr;
+    char msg[MAX];
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(PORT);
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    printf("Connected to the bank server...\n");
+
+    while (1) {
+        int accno, pin, amt;
+        printf("\nEnter Account No (-1 to exit): ");
+        scanf("%d", &accno);
+        if (accno == -1) {
+            write(sockfd, &accno, sizeof(accno));
+            break;
+        }
+
+        printf("Enter PIN: ");
+        scanf("%d", &pin);
+        printf("Enter Withdrawal Amount: ");
+        scanf("%d", &amt);
+
+        // Send details
+        write(sockfd, &accno, sizeof(accno));
+        write(sockfd, &pin, sizeof(pin));
+        write(sockfd, &amt, sizeof(amt));
+
+        // Receive response
+        read(sockfd, msg, sizeof(msg));
+        printf("Server: %s\n", msg);
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+
+UDP
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define MAX 1024
+
+int main() {
+    int sockfd;
+    char buffer[MAX];
+    struct sockaddr_in servaddr, cliaddr;
+    socklen_t len;
+
+    // Create UDP socket
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Clear and set server address
+    memset(&servaddr, 0, sizeof(servaddr));
+    memset(&cliaddr, 0, sizeof(cliaddr));
+
+    servaddr.sin_family = AF_INET;       // IPv4
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(PORT);
+
+    // Bind socket with server address
+    if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Server started... Waiting for client messages.\n");
+
+    len = sizeof(cliaddr);
+
+    // Infinite chat loop
+    while (1) {
+        bzero(buffer, MAX);
+
+        // Receive message from client
+        recvfrom(sockfd, buffer, MAX, 0, (struct sockaddr*)&cliaddr, &len);
+        printf("Client: %s", buffer);
+
+        // Check for exit condition
+        if (strncmp("exit", buffer, 4) == 0) {
+            printf("Client ended the chat. Closing server...\n");
+            break;
+        }
+
+        // Get message from server side
+        bzero(buffer, MAX);
+        printf("You: ");
+        fgets(buffer, MAX, stdin);
+
+        // Send to client
+        sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr*)&cliaddr, len);
+
+        if (strncmp("exit", buffer, 4) == 0) {
+            printf("Server exiting...\n");
+            break;
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define MAX 1024
+
+int main() {
+    int sockfd;
+    char buffer[MAX];
+    struct sockaddr_in servaddr;
+    socklen_t len;
+
+    // Create UDP socket
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(PORT);
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // localhost
+
+    len = sizeof(servaddr);
+
+    printf("Connected to server. Type your messages below.\n");
+
+    // Infinite chat loop
+    while (1) {
+        bzero(buffer, MAX);
+        printf("You: ");
+        fgets(buffer, MAX, stdin);
+
+        // Send message to server
+        sendto(sockfd, buffer, strlen(buffer), 0, (const struct sockaddr*)&servaddr, len);
+
+        // If exit, end chat
+        if (strncmp("exit", buffer, 4) == 0) {
+            printf("Exiting chat...\n");
+            break;
+        }
+
+        bzero(buffer, MAX);
+
+        // Receive reply from server
+        recvfrom(sockfd, buffer, MAX, 0, (struct sockaddr*)&servaddr, &len);
+        printf("Server: %s", buffer);
+
+        if (strncmp("exit", buffer, 4) == 0) {
+            printf("Server ended the chat.\n");
+            break;
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+
+
+
+msgqueue
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
+struct msg {
+    long msg_type;
+    int arr[100];
+    int n;
+};
+
+int main() {
+    struct msg m;
+    key_t key = ftok("progfile", 65);
+    int msgid = msgget(key, 0666 | IPC_CREAT);
+
+    // Receive message from client
+    msgrcv(msgid, &m, sizeof(m), 1, 0);
+
+    printf("Server received %d numbers:\n", m.n);
+    for (int i = 0; i < m.n; i++)
+        printf("%d ", m.arr[i]);
+    printf("\n");
+
+    // Sort the array
+    for (int i = 0; i < m.n - 1; i++) {
+        for (int j = i + 1; j < m.n; j++) {
+            if (m.arr[i] > m.arr[j]) {
+                int temp = m.arr[i];
+                m.arr[i] = m.arr[j];
+                m.arr[j] = temp;
+            }
+        }
+    }
+
+    // Send sorted array back to client
+    m.msg_type = 2;
+    msgsnd(msgid, &m, sizeof(m), 0);
+
+    printf("Server sent sorted array back to client.\n");
+    return 0;
+}
+
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
+struct msg {
+    long msg_type;
+    int arr[100];
+    int n;
+};
+
+int main() {
+    struct msg m;
+    key_t key = ftok("progfile", 65);
+    int msgid = msgget(key, 0666 | IPC_CREAT);
+
+    printf("Enter number of elements: ");
+    scanf("%d", &m.n);
+
+    printf("Enter %d numbers: ", m.n);
+    for (int i = 0; i < m.n; i++)
+        scanf("%d", &m.arr[i]);
+
+    // Send to server
+    m.msg_type = 1;
+    msgsnd(msgid, &m, sizeof(m), 0);
+    printf("Array sent to server for sorting.\n");
+
+    // Receive sorted array
+    msgrcv(msgid, &m, sizeof(m), 2, 0);
+    printf("Sorted array received from server:\n");
+    for (int i = 0; i < m.n; i++)
+        printf("%d ", m.arr[i]);
+    printf("\n");
+
+    // Delete message queue
+    msgctl(msgid, IPC_RMID, NULL);
+    return 0;
+}
+
+
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+int main() {
+    char str[100], result[10];
+    int fd1, fd2;
+
+    // Create two named pipes (FIFOs)
+    mkfifo("fifo1", 0666);
+    mkfifo("fifo2", 0666);
+
+    printf("Server is running...\n");
+
+    while (1) {
+        // Open fifo1 for reading (get string from client)
+        fd1 = open("fifo1", O_RDONLY);
+        read(fd1, str, sizeof(str));
+        close(fd1);
+
+        // Check for termination condition
+        if (strcmp(str, "exit") == 0) {
+            printf("Server exiting...\n");
+            break;
+        }
+
+        printf("Received string: %s\n", str);
+
+        // Check palindrome
+        int len = strlen(str);
+        int flag = 0;
+        for (int i = 0; i < len / 2; i++) {
+            if (str[i] != str[len - i - 1]) {
+                flag = 1;
+                break;
+            }
+        }
+
+        // Prepare result
+        if (flag == 0)
+            strcpy(result, "YES");
+        else
+            strcpy(result, "NO");
+
+        // Send result back to client via fifo2
+        fd2 = open("fifo2", O_WRONLY);
+        write(fd2, result, strlen(result) + 1);
+        close(fd2);
+
+        printf("Sent result: %s\n\n", result);
+    }
+
+    return 0;
+}
+
+
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+int main() {
+    char str[100], result[10];
+    int fd1, fd2;
+
+    while (1) {
+        printf("Enter a string (or 'exit' to quit): ");
+        scanf("%s", str);
+
+        // Send string to server via fifo1
+        fd1 = open("fifo1", O_WRONLY);
+        write(fd1, str, strlen(str) + 1);
+        close(fd1);
+
+        if (strcmp(str, "exit") == 0)
+            break;
+
+        // Receive result from server via fifo2
+        fd2 = open("fifo2", O_RDONLY);
+        read(fd2, result, sizeof(result));
+        close(fd2);
+
+        printf("Palindrome check result: %s\n\n", result);
+    }
+
+    return 0;
+}
